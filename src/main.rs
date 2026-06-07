@@ -23,11 +23,10 @@ fn main() {
     with_scope(|arena| {
         let mut sig = Signature::new();
         let mut axioms_registry = axioms::AxiomRegistry::new();
-        let mut levels = level::ConstraintSet::new();
         let ctx = Context::new();
         let env = Env::new();
 
-        let analysis = build_analysis(&arena, &mut sig, &mut axioms_registry, &mut levels);
+        let analysis = build_analysis(&arena, &mut sig, &mut axioms_registry);
 
         let steps = [
             (

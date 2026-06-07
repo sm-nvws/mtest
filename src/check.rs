@@ -5,7 +5,7 @@ use crate::axioms::AxiomRegistry;
 use crate::context::Context;
 use crate::env::Env;
 use crate::error::{term_display, value_display, TyError};
-use crate::level::{ConstraintSet, Level};
+use crate::level::{ConstraintSet, Level, LevelVar};
 use crate::norm::{def_eq, eval};
 use crate::signature::{Entry, Signature};
 use crate::term::TermData;
@@ -22,6 +22,10 @@ pub fn solve_levels() -> Result<(), crate::level::LevelError> {
 
 pub fn reset_levels() {
     LEVELS.with(|cell| *cell.borrow_mut() = ConstraintSet::new());
+}
+
+pub fn fresh_level() -> LevelVar {
+    levels_mut(|levels| levels.fresh())
 }
 
 fn levels_mut<F, R>(f: F) -> R

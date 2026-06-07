@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::arena::Arena;
-use crate::level::ConstraintSet;
+use crate::check::fresh_level;
 use crate::signature::Signature;
 use crate::term::{Name, TermId};
 
@@ -63,10 +63,9 @@ pub fn build_analysis<'scope>(
     arena: &Arena<'scope>,
     sig: &mut Signature<'scope>,
     axioms: &mut AxiomRegistry<'scope>,
-    levels: &mut ConstraintSet,
 ) -> Analysis<'scope> {
-    let prop = arena.typ(levels.fresh());
-    let real = arena.typ(levels.fresh());
+    let prop = arena.typ(fresh_level());
+    let real = arena.typ(fresh_level());
     let nat = arena.nat();
     let seq = arr(arena, nat, real);
     let seq2 = arr(arena, nat, arr(arena, real, real));
