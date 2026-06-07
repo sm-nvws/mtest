@@ -1,6 +1,6 @@
 use crate::arena::Arena;
 use crate::env::Env;
-use crate::level::ConstraintSet;
+use crate::level::{ConstraintSet, Level};
 use crate::signature::{Entry, Signature};
 use crate::term::{TermData, TermId};
 use crate::value::{Neutral, Value};
@@ -283,21 +283,6 @@ pub fn normalize<'scope>(
     }
 }
 
-fn pi_head_eq<'scope>(a: &Value<'scope>, b: &Value<'scope>) -> bool {
-    let pi_id = |v: &Value<'scope>| match v {
-        Value::VPi(id, _) => Some(*id),
-        Value::VConst(_, ty) => match ty.as_ref() {
-            Value::VPi(id, _) => Some(*id),
-            _ => None,
-        },
-        _ => None,
-    };
-    match (pi_id(a), pi_id(b)) {
-        (Some(ida), Some(idb)) => ida == idb,
-        _ => false,
-    }
-}
-
 pub fn def_eq<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
@@ -306,25 +291,185 @@ pub fn def_eq<'scope>(
     a: &Value<'scope>,
     b: &Value<'scope>,
 ) -> bool {
-    if pi_head_eq(a, b) {
-        return true;
-    }
-    if quote_type(arena, sig, a, env.len()) && quote_type(arena, sig, b, env.len()) {
-        if let (Value::VType(l1), Value::VType(l2)) = (a, b) {
-            levels.equate(
-                crate::level::Level::var(*l1),
-                crate::level::Level::var(*l2),
-            );
-        }
-    }
-    let na = quote(arena, sig, a, env.len());
-    let nb = quote(arena, sig, b, env.len());
-    structural_eq(arena, na, nb)
+    def_eq_values(arena, sig, env, levels, a, b)
 }
 
-fn quote_type<'scope>(arena: &Arena<'scope>, sig: &Signature<'scope>, v: &Value<'scope>, lvl: usize) -> bool {
-    let _ = (arena, sig, v, lvl);
-    matches!(v, Value::VType(_))
+fn def_eq_values<'scope>(
+    arena: &Arena<'scope>,
+    sig: &Signature<'scope>,
+    env: &Env<'scope>,
+    levels: &mut ConstraintSet,
+    a: &Value<'scope>,
+    b: &Value<'scope>,
+) -> bool {
+    if let Value::VConst(name, _) = a {
+        if let Some(Entry::Def { body, .. }) = sig.get(name) {
+            let unfolded = eval(arena, sig, *body, env);
+            return def_eq_values(arena, sig, env, levels, &unfolded, b);
+        }
+    }
+    if let Value::VConst(name, _) = b {
+        if let Some(Entry::Def { body, .. }) = sig.get(name) {
+            let unfolded = eval(arena, sig, *body, env);
+            return def_eq_values(arena, sig, env, levels, a, &unfolded);
+        }
+    }
+
+    match (a, b) {
+        (Value::VType(l1), Value::VType(l2)) => {
+            levels.equate(Level::var(*l1), Level::var(*l2));
+            true
+        }
+        (Value::VNat, Value::VNat) => true,
+        (Value::VZero, Value::VZero) => true,
+        (Value::VSucc(a1), Value::VSucc(b1)) => {
+            def_eq_values(arena, sig, env, levels, a1, b1)
+        }
+        (Value::VPair(x1, y1), Value::VPair(x2, y2)) => {
+            def_eq_values(arena, sig, env, levels, x1, x2)
+                && def_eq_values(arena, sig, env, levels, y1, y2)
+        }
+        (Value::VPi(id1, env1), Value::VPi(id2, env2)) => {
+            def_eq_pi(arena, sig, env, levels, *id1, env1, *id2, env2)
+        }
+        (Value::VSigma(id1, env1), Value::VSigma(id2, env2)) => {
+            def_eq_sigma(arena, sig, env, levels, *id1, env1, *id2, env2)
+        }
+        (Value::VLam(body1, env1), Value::VLam(body2, env2)) => {
+            def_eq_lam(arena, sig, env, levels, *body1, env1, *body2, env2)
+        }
+        (Value::VConst(n1, _), Value::VConst(n2, _)) => n1 == n2,
+        (Value::VConst(_, ty1), other) => def_eq_values(arena, sig, env, levels, ty1, other),
+        (other, Value::VConst(_, ty2)) => def_eq_values(arena, sig, env, levels, other, ty2),
+        (Value::VNeutral(n1), Value::VNeutral(n2)) => {
+            def_eq_neutral(arena, sig, env, levels, n1, n2)
+        }
+        _ => {
+            let na = quote(arena, sig, a, env.len());
+            let nb = quote(arena, sig, b, env.len());
+            structural_eq(arena, na, nb)
+        }
+    }
+}
+
+fn def_eq_pi<'scope>(
+    arena: &Arena<'scope>,
+    sig: &Signature<'scope>,
+    env: &Env<'scope>,
+    levels: &mut ConstraintSet,
+    id1: TermId<'scope>,
+    env1: &Env<'scope>,
+    id2: TermId<'scope>,
+    env2: &Env<'scope>,
+) -> bool {
+    let (a1, b1) = match arena.get(id1) {
+        TermData::Pi(a, b) => (a, b),
+        _ => return false,
+    };
+    let (a2, b2) = match arena.get(id2) {
+        TermData::Pi(a, b) => (a, b),
+        _ => return false,
+    };
+    let dom1 = eval(arena, sig, a1, env1);
+    let dom2 = eval(arena, sig, a2, env2);
+    if !def_eq_values(arena, sig, env, levels, &dom1, &dom2) {
+        return false;
+    }
+    let env1_ext = env1.extend(Value::VNeutral(Neutral::NVar(env1.len())));
+    let env2_ext = env2.extend(Value::VNeutral(Neutral::NVar(env2.len())));
+    let cod1 = eval(arena, sig, b1, &env1_ext);
+    let cod2 = eval(arena, sig, b2, &env2_ext);
+    def_eq_values(arena, sig, env, levels, &cod1, &cod2)
+}
+
+fn def_eq_sigma<'scope>(
+    arena: &Arena<'scope>,
+    sig: &Signature<'scope>,
+    env: &Env<'scope>,
+    levels: &mut ConstraintSet,
+    id1: TermId<'scope>,
+    env1: &Env<'scope>,
+    id2: TermId<'scope>,
+    env2: &Env<'scope>,
+) -> bool {
+    let (a1, b1) = match arena.get(id1) {
+        TermData::Sigma(a, b) => (a, b),
+        _ => return false,
+    };
+    let (a2, b2) = match arena.get(id2) {
+        TermData::Sigma(a, b) => (a, b),
+        _ => return false,
+    };
+    let fst1 = eval(arena, sig, a1, env1);
+    let fst2 = eval(arena, sig, a2, env2);
+    if !def_eq_values(arena, sig, env, levels, &fst1, &fst2) {
+        return false;
+    }
+    let env1_ext = env1.extend(Value::VNeutral(Neutral::NVar(env1.len())));
+    let env2_ext = env2.extend(Value::VNeutral(Neutral::NVar(env2.len())));
+    let snd1 = eval(arena, sig, b1, &env1_ext);
+    let snd2 = eval(arena, sig, b2, &env2_ext);
+    def_eq_values(arena, sig, env, levels, &snd1, &snd2)
+}
+
+fn def_eq_lam<'scope>(
+    arena: &Arena<'scope>,
+    sig: &Signature<'scope>,
+    env: &Env<'scope>,
+    levels: &mut ConstraintSet,
+    body1: TermId<'scope>,
+    env1: &Env<'scope>,
+    body2: TermId<'scope>,
+    env2: &Env<'scope>,
+) -> bool {
+    let arg = Value::VNeutral(Neutral::NVar(env.len()));
+    let v1 = eval(arena, sig, body1, &env1.extend(arg.clone()));
+    let v2 = eval(arena, sig, body2, &env2.extend(arg));
+    def_eq_values(arena, sig, env, levels, &v1, &v2)
+}
+
+fn def_eq_neutral<'scope>(
+    arena: &Arena<'scope>,
+    sig: &Signature<'scope>,
+    env: &Env<'scope>,
+    levels: &mut ConstraintSet,
+    a: &Neutral<'scope>,
+    b: &Neutral<'scope>,
+) -> bool {
+    match (a, b) {
+        (Neutral::NVar(i), Neutral::NVar(j)) => i == j,
+        (Neutral::NConst(n1), Neutral::NConst(n2)) => n1 == n2,
+        (Neutral::NApp(f1, x1), Neutral::NApp(f2, x2)) => {
+            def_eq_neutral(arena, sig, env, levels, f1, f2)
+                && def_eq_values(arena, sig, env, levels, x1, x2)
+        }
+        (Neutral::NFst(p1), Neutral::NFst(p2)) => def_eq_neutral(arena, sig, env, levels, p1, p2),
+        (Neutral::NSnd(p1), Neutral::NSnd(p2)) => def_eq_neutral(arena, sig, env, levels, p1, p2),
+        (
+            Neutral::NNatElim {
+                motive: m1,
+                base: b1,
+                step: s1,
+                target: t1,
+            },
+            Neutral::NNatElim {
+                motive: m2,
+                base: b2,
+                step: s2,
+                target: t2,
+            },
+        ) => {
+            def_eq_values(arena, sig, env, levels, m1, m2)
+                && def_eq_values(arena, sig, env, levels, b1, b2)
+                && def_eq_values(arena, sig, env, levels, s1, s2)
+                && def_eq_neutral(arena, sig, env, levels, t1, t2)
+        }
+        _ => {
+            let t1 = quote_neutral(arena, sig, a, env.len());
+            let t2 = quote_neutral(arena, sig, b, env.len());
+            structural_eq(arena, t1, t2)
+        }
+    }
 }
 
 fn structural_eq<'scope>(arena: &Arena<'scope>, a: TermId<'scope>, b: TermId<'scope>) -> bool {
