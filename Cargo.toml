@@ -1,0 +1,8 @@
+[package]
+name = "spartan-rs"
+version = "0.1.0"
+edition = "2026"
+
+[dependencies]
+thiserror = "2"
+miette = { version = "7", features = ["fancy"] }
