@@ -104,25 +104,35 @@ pub fn build_analysis<'scope>(
     register_axiom(sig, axioms, "cauchy_pf", cauchy_thm);
 
     register_axiom(sig, axioms, "uniform", arr(arena, seq2, arr(arena, fun_real, prop)));
-    register_axiom(sig, axioms, "mtest_hyp", prop);
-    register_axiom(sig, axioms, "hyp_fs", arr(arena, k(arena, "mtest_hyp"), seq2));
-    register_axiom(sig, axioms, "hyp_f", arr(arena, k(arena, "mtest_hyp"), fun_real));
-    register_axiom(sig, axioms, "hyp_major", arr(arena, k(arena, "mtest_hyp"), seq));
-    register_axiom(sig, axioms, "hyp_bound", arr(arena, k(arena, "mtest_hyp"), arr(arena, real, prop)));
-    register_axiom(
-        sig,
-        axioms,
-        "hyp_cauchy",
-        dep_pi(arena, k(arena, "mtest_hyp"), |h| {
-            arena.app(k(arena, "cauchy"), arena.app(k(arena, "hyp_major"), h))
-        }),
+
+    let bound = arena.pi(
+        nat,
+        arena.pi(
+            real,
+            arena.app(
+                k(arena, "le"),
+                arena.app(
+                    k(arena, "abs"),
+                    arena.app(arena.app(arena.var(5), arena.var(1)), arena.var(0)),
+                ),
+            ),
+        ),
+    );
+    let mtest_hyp = arena.sigma(
+        seq2,
+        arena.sigma(
+            fun_real,
+            arena.sigma(
+                seq,
+                arena.sigma(arena.app(k(arena, "cauchy"), arena.var(0)), bound),
+            ),
+        ),
     );
 
-    let mtest_stmt = dep_pi(arena, k(arena, "mtest_hyp"), |h| {
-        arena.app(
-            arena.app(k(arena, "uniform"), arena.app(k(arena, "hyp_fs"), h)),
-            arena.app(k(arena, "hyp_f"), h),
-        )
+    let mtest_stmt = dep_pi(arena, mtest_hyp, |h| {
+        let fs = arena.fst(h);
+        let f = arena.fst(arena.snd(h));
+        arena.app(arena.app(k(arena, "uniform"), fs), f)
     });
     register_axiom(sig, axioms, "uniform_from_cauchy", mtest_stmt);
     register_axiom(sig, axioms, "mtest", mtest_stmt);
