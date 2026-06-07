@@ -404,17 +404,32 @@ fn check_nat_elim<'scope>(
         motive,
         Value::VPi(motive_pi, env.clone()),
     )?;
-    let (_nat_dom, motive_cod) = pi_parts(arena, motive_pi)?;
-    let zero_ty = eval(arena, sig, motive_cod, env);
-    check_inner(arena, sig, axioms, ctx, env, levels, base, zero_ty)?;
+    let base_ty = eval(arena, sig, arena.app(motive, arena.zero()), env);
+    check_inner(arena, sig, axioms, ctx, env, levels, base, base_ty)?;
+    let step_ty = arena.pi(
+        arena.nat(),
+        arena.pi(
+            arena.app(motive, arena.var(0)),
+            arena.app(motive, arena.succ(arena.var(1))),
+        ),
+    );
+    check_inner(
+        arena,
+        sig,
+        axioms,
+        ctx,
+        env,
+        levels,
+        step,
+        eval(arena, sig, step_ty, env),
+    )?;
     check_inner(arena, sig, axioms, ctx, env, levels, target, Value::VNat)?;
-    let elim = arena.nat_elim(motive, base, step, target);
-    let result = eval(arena, sig, elim, env);
-    if !def_eq(arena, sig, env, levels, &result, &ty) {
+    let expected = eval(arena, sig, arena.app(motive, target), env);
+    if !def_eq(arena, sig, env, levels, &expected, &ty) {
         return Err(TyError::TypeMismatch {
             term,
             expected: value_display(&ty),
-            found: value_display(&result),
+            found: value_display(&expected),
         });
     }
     Ok(())
