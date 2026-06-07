@@ -72,7 +72,6 @@ pub fn build_analysis<'scope>(
     let seq2 = arr(arena, nat, arr(arena, real, real));
     let fun_real = arr(arena, real, real);
 
-    // complete ordered field
     register_axiom(sig, axioms, "zero", real);
     register_axiom(sig, axioms, "one", real);
     register_axiom(sig, axioms, "add", arr(arena, real, real));
@@ -82,7 +81,6 @@ pub fn build_analysis<'scope>(
     register_axiom(sig, axioms, "le", arr(arena, real, prop));
     register_axiom(sig, axioms, "lt", arr(arena, real, prop));
 
-    // axiom of choice
     register_axiom(
         sig,
         axioms,
@@ -94,7 +92,6 @@ pub fn build_analysis<'scope>(
     register_axiom(sig, axioms, "conv", arr(arena, seq, arr(arena, real, prop)));
     register_axiom(sig, axioms, "conv_exists", arr(arena, seq, prop));
 
-    // completeness of R  ⇒  Cauchy criterion
     let cauchy_thm = dep_pi(arena, seq, |s| {
         arr(
             arena,
@@ -121,7 +118,6 @@ pub fn build_analysis<'scope>(
         }),
     );
 
-    // Cauchy + majorization  ⇒  uniform convergence (Weierstrass M-test conclusion)
     let mtest_stmt = dep_pi(arena, k(arena, "mtest_hyp"), |h| {
         arena.app(
             arena.app(k(arena, "uniform"), arena.app(k(arena, "hyp_fs"), h)),
@@ -131,7 +127,6 @@ pub fn build_analysis<'scope>(
     register_axiom(sig, axioms, "uniform_from_cauchy", mtest_stmt);
     register_axiom(sig, axioms, "mtest", mtest_stmt);
 
-    // explicit proof terms (choice → complete → cauchy_pf → uniform_from_cauchy → mtest)
     let cauchy_proof = arena.ann(k(arena, "cauchy_pf"), cauchy_thm);
     let uniform_proof = arena.ann(k(arena, "uniform_from_cauchy"), mtest_stmt);
     let mtest_proof = arena.ann(k(arena, "mtest"), mtest_stmt);

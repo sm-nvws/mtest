@@ -23,9 +23,7 @@ impl Level {
 #[derive(Clone, Debug, Default)]
 pub struct ConstraintSet {
     fresh: usize,
-    /// Each variable is solved to a concrete level (no remaining Var nodes).
     assign: HashMap<LevelVar, Level>,
-    /// ℓ₁ ≤ ℓ₂ after substitution.
     leq: Vec<(Level, Level)>,
 }
 
