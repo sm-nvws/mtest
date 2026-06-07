@@ -234,7 +234,10 @@ fn quote_neutral<'scope>(
     level: usize,
 ) -> TermId<'scope> {
     match n {
-        Neutral::NVar(l) => arena.var(level.saturating_sub(1).saturating_sub(*l)),
+        Neutral::NVar(l) => {
+            assert!(level > *l, "variable out of scope in quote");
+            arena.var(level - 1 - l)
+        }
         Neutral::NApp(h, a) => {
             let f = quote_neutral(arena, sig, h, level);
             let x = quote(arena, sig, a, level);
