@@ -72,7 +72,7 @@ fn check_inner<'scope>(
         TermData::Lam(param_ty, body) => match &ty {
             Value::VPi(pi_id, pi_env) => {
                 let (dom, cod) = pi_parts(arena, *pi_id)?;
-                let dom_val = eval(arena, sig, dom, env);
+                let dom_val = eval(arena, sig, dom, pi_env);
                 let param_ty_val = eval(arena, sig, param_ty, env);
                 if !def_eq(arena, sig, env, levels, &param_ty_val, &dom_val) {
                     return Err(TyError::TypeMismatch {
@@ -83,12 +83,8 @@ fn check_inner<'scope>(
                 }
                 let new_ctx = ctx.extend(dom_val);
                 let new_env = env.extend(Value::VNeutral(Neutral::NVar(env.len())));
-                let cod_env = if pi_env.len() > 0 && pi_env.len() == env.len() {
-                    pi_env
-                } else {
-                    &pi_env.extend(Value::VNeutral(Neutral::NVar(pi_env.len())))
-                };
-                let cod_val = eval(arena, sig, cod, cod_env);
+                let cod_env = pi_env.extend(Value::VNeutral(Neutral::NVar(pi_env.len())));
+                let cod_val = eval(arena, sig, cod, &cod_env);
                 check_inner(arena, sig, axioms, &new_ctx, &new_env, levels, body, cod_val)
             }
             _ => Err(TyError::TypeMismatch {
