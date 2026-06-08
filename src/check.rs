@@ -6,7 +6,7 @@ use crate::context::Context;
 use crate::env::Env;
 use crate::error::{term_display, value_display, TyError};
 use crate::level::{ConstraintSet, Level, LevelVar};
-use crate::norm::{def_eq, eval};
+use crate::norm::{def_eq, eval, quote};
 use crate::signature::{Entry, Signature};
 use crate::term::TermData;
 use crate::term::TermId;
@@ -214,8 +214,9 @@ fn infer_inner<'scope>(
             let dom = eval(arena, sig, param_ty, env);
             let new_ctx = ctx.extend(dom.clone());
             let new_env = env.extend(Value::VNeutral(Neutral::NVar(env.len())));
-            let _cod = infer_inner(arena, sig, axioms, &new_ctx, &new_env, levels, body)?;
-            let pi_id = arena.pi(param_ty, body);
+            let cod_val = infer_inner(arena, sig, axioms, &new_ctx, &new_env, levels, body)?;
+            let cod_term = quote(arena, sig, &cod_val, new_env.len());
+            let pi_id = arena.pi(param_ty, cod_term);
             Ok(Value::VPi(pi_id, env.clone()))
         }
         TermData::App(f, x) => {
