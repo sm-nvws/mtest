@@ -27,7 +27,7 @@ pub fn eval<'scope>(
             Box::new(eval(arena, sig, y, env)),
         ),
         TermData::Fst(p) => elim_fst(eval(arena, sig, p, env)),
-        TermData::Snd(p) => elim_snd(arena, sig, p, env),
+        TermData::Snd(p) => elim_snd(eval(arena, sig, p, env)),
         TermData::Nat => Value::VNat,
         TermData::Zero => Value::VZero,
         TermData::Succ(n) => Value::VSucc(Box::new(eval(arena, sig, n, env))),
@@ -99,13 +99,7 @@ fn elim_fst<'scope>(pair: Value<'scope>) -> Value<'scope> {
     }
 }
 
-fn elim_snd<'scope>(
-    arena: &Arena<'scope>,
-    sig: &Signature<'scope>,
-    pair: TermId<'scope>,
-    env: &Env<'scope>,
-) -> Value<'scope> {
-    let pair = eval(arena, sig, pair, env);
+fn elim_snd<'scope>(pair: Value<'scope>) -> Value<'scope> {
     match pair {
         Value::VPair(_, b) => *b,
         Value::VNeutral(n) => Value::VNeutral(Neutral::NSnd(Box::new(n))),
