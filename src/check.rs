@@ -136,6 +136,13 @@ fn check_inner<'scope>(
         } => check_nat_elim(
             arena, sig, axioms, ctx, env, levels, term, ty, motive, base, step, target,
         ),
+        TermData::SigmaElim {
+            motive,
+            elim,
+            target,
+        } => check_sigma_elim(
+            arena, sig, axioms, ctx, env, levels, term, ty, motive, elim, target,
+        ),
         _ => {
             let inferred = infer_inner(arena, sig, axioms, ctx, env, levels, term)?;
             if !def_eq(arena, sig, env, levels, &inferred, &ty) {
@@ -285,7 +292,7 @@ fn infer_inner<'scope>(
             check_inner(arena, sig, axioms, ctx, env, levels, n, Value::VNat)?;
             Ok(Value::VNat)
         }
-        TermData::NatElim { .. } => Err(TyError::CannotInfer { term }),
+        TermData::NatElim { .. } | TermData::SigmaElim { .. } => Err(TyError::CannotInfer { term }),
         TermData::Ann(t, ty) => {
             let expected = eval(arena, sig, ty, env);
             check_inner(arena, sig, axioms, ctx, env, levels, t, expected.clone())?;
@@ -379,6 +386,70 @@ fn sigma_parts<'scope>(
         TermData::Sigma(a, b) => Ok((a, b)),
         _ => Err(TyError::InvalidElim { term: sig_id }),
     }
+}
+
+fn check_sigma_elim<'scope>(
+    arena: &Arena<'scope>,
+    sig: &Signature<'scope>,
+    axioms: &AxiomRegistry<'scope>,
+    ctx: &Context<'scope>,
+    env: &Env<'scope>,
+    levels: &mut ConstraintSet,
+    term: TermId<'scope>,
+    ty: Value<'scope>,
+    motive: TermId<'scope>,
+    elim: TermId<'scope>,
+    target: TermId<'scope>,
+) -> Result<(), TyError<'scope>> {
+    let target_ty = infer_inner(arena, sig, axioms, ctx, env, levels, target)?;
+    let (sig_id, _env_sig) = match target_ty {
+        Value::VSigma(sig_id, env_sig) => (sig_id, env_sig),
+        _ => {
+            return Err(TyError::TypeMismatch {
+                term: target,
+                expected: "Σ-type".into(),
+                found: value_display(&target_ty),
+            });
+        }
+    };
+    let (a_ty, b_ty) = sigma_parts(arena, sig_id)?;
+    let motive_pi = arena.pi(sig_id, arena.typ(levels.fresh()));
+    check_inner(
+        arena,
+        sig,
+        axioms,
+        ctx,
+        env,
+        levels,
+        motive,
+        Value::VPi(motive_pi, env.clone()),
+    )?;
+    let elim_ty = arena.pi(
+        a_ty,
+        arena.pi(
+            b_ty,
+            arena.app(motive, arena.pair(arena.var(1), arena.var(0))),
+        ),
+    );
+    check_inner(
+        arena,
+        sig,
+        axioms,
+        ctx,
+        env,
+        levels,
+        elim,
+        eval(arena, sig, elim_ty, env),
+    )?;
+    let expected = eval(arena, sig, arena.app(motive, target), env);
+    if !def_eq(arena, sig, env, levels, &expected, &ty) {
+        return Err(TyError::TypeMismatch {
+            term,
+            expected: value_display(&ty),
+            found: value_display(&expected),
+        });
+    }
+    Ok(())
 }
 
 fn check_nat_elim<'scope>(

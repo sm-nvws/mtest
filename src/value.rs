@@ -28,5 +28,10 @@ pub enum Neutral<'scope> {
         step: Box<Value<'scope>>,
         target: Box<Neutral<'scope>>,
     },
+    NSigmaElim {
+        motive: Box<Value<'scope>>,
+        elim: Box<Value<'scope>>,
+        target: Box<Neutral<'scope>>,
+    },
     NConst(Name),
 }

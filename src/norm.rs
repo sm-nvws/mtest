@@ -37,6 +37,11 @@ pub fn eval<'scope>(
             step,
             target,
         } => elim_nat(arena, sig, env, motive, base, step, eval(arena, sig, target, env)),
+        TermData::SigmaElim {
+            motive,
+            elim,
+            target,
+        } => elim_sigma(arena, sig, env, motive, elim, eval(arena, sig, target, env)),
         TermData::Ann(t, _) => eval(arena, sig, t, env),
         TermData::Const(name) => eval_const(arena, sig, &name, env),
     }
@@ -105,6 +110,31 @@ fn elim_snd<'scope>(
         Value::VPair(_, b) => *b,
         Value::VNeutral(n) => Value::VNeutral(Neutral::NSnd(Box::new(n))),
         other => Value::VNeutral(Neutral::NSnd(Box::new(neutral_from_value(other)))),
+    }
+}
+
+fn elim_sigma<'scope>(
+    arena: &Arena<'scope>,
+    sig: &Signature<'scope>,
+    env: &Env<'scope>,
+    motive: TermId<'scope>,
+    elim: TermId<'scope>,
+    target: Value<'scope>,
+) -> Value<'scope> {
+    let vm = eval(arena, sig, motive, env);
+    let ve = eval(arena, sig, elim, env);
+    match target {
+        Value::VPair(fst, snd) => apply(arena, sig, apply(arena, sig, ve, *fst), *snd),
+        Value::VNeutral(n) => Value::VNeutral(Neutral::NSigmaElim {
+            motive: Box::new(vm),
+            elim: Box::new(ve),
+            target: Box::new(n),
+        }),
+        other => Value::VNeutral(Neutral::NSigmaElim {
+            motive: Box::new(vm),
+            elim: Box::new(ve),
+            target: Box::new(neutral_from_value(other)),
+        }),
     }
 }
 
@@ -262,6 +292,16 @@ fn quote_neutral<'scope>(
             let s = quote(arena, sig, step, level);
             let t = quote_neutral(arena, sig, target, level);
             arena.nat_elim(m, b, s, t)
+        }
+        Neutral::NSigmaElim {
+            motive,
+            elim,
+            target,
+        } => {
+            let m = quote(arena, sig, motive, level);
+            let e = quote(arena, sig, elim, level);
+            let t = quote_neutral(arena, sig, target, level);
+            arena.sigma_elim(m, e, t)
         }
         Neutral::NConst(name) => arena.konst(name.clone()),
     }
@@ -467,6 +507,22 @@ fn def_eq_neutral<'scope>(
                 && def_eq_values(arena, sig, env, levels, s1, s2)
                 && def_eq_neutral(arena, sig, env, levels, t1, t2)
         }
+        (
+            Neutral::NSigmaElim {
+                motive: m1,
+                elim: e1,
+                target: t1,
+            },
+            Neutral::NSigmaElim {
+                motive: m2,
+                elim: e2,
+                target: t2,
+            },
+        ) => {
+            def_eq_values(arena, sig, env, levels, m1, m2)
+                && def_eq_values(arena, sig, env, levels, e1, e2)
+                && def_eq_neutral(arena, sig, env, levels, t1, t2)
+        }
         _ => {
             let t1 = quote_neutral(arena, sig, a, env.len());
             let t2 = quote_neutral(arena, sig, b, env.len());
@@ -516,6 +572,22 @@ fn structural_eq<'scope>(arena: &Arena<'scope>, a: TermId<'scope>, b: TermId<'sc
             structural_eq(arena, m1, m2)
                 && structural_eq(arena, b1, b2)
                 && structural_eq(arena, s1, s2)
+                && structural_eq(arena, t1, t2)
+        }
+        (
+            TermData::SigmaElim {
+                motive: m1,
+                elim: e1,
+                target: t1,
+            },
+            TermData::SigmaElim {
+                motive: m2,
+                elim: e2,
+                target: t2,
+            },
+        ) => {
+            structural_eq(arena, m1, m2)
+                && structural_eq(arena, e1, e2)
                 && structural_eq(arena, t1, t2)
         }
         (TermData::Ann(t1, ty1), TermData::Ann(t2, ty2)) => {

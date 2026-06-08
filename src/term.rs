@@ -29,6 +29,11 @@ pub enum TermData<'scope> {
         step: TermId<'scope>,
         target: TermId<'scope>,
     },
+    SigmaElim {
+        motive: TermId<'scope>,
+        elim: TermId<'scope>,
+        target: TermId<'scope>,
+    },
     Ann(TermId<'scope>, TermId<'scope>),
     Const(Name),
 }

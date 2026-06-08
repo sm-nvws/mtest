@@ -160,21 +160,48 @@ pub fn build_analysis<'scope>(
             ),
         ),
     );
-    let mtest_hyp = arena.sigma(
-        seq2,
-        arena.sigma(
-            fun_real,
-            arena.sigma(
-                seq,
-                arena.sigma(arena.app(k(arena, "cauchy"), arena.var(0)), dominated),
-            ),
-        ),
+    let rest_ty = arena.sigma(
+        seq,
+        arena.sigma(arena.app(k(arena, "cauchy"), arena.var(0)), dominated),
     );
+    let tail_ty = arena.sigma(fun_real, rest_ty);
+    let mtest_hyp = arena.sigma(seq2, tail_ty);
 
     let mtest_stmt = dep_pi(arena, mtest_hyp, |h| {
-        let fs = arena.fst(h);
-        let f = arena.fst(arena.snd(h));
-        arena.app(arena.app(k(arena, "uniform"), fs), f)
+        let motive = arena.lam(
+            mtest_hyp,
+            arena.app(
+                arena.app(k(arena, "uniform"), arena.fst(arena.var(0))),
+                arena.fst(arena.snd(arena.var(0))),
+            ),
+        );
+        let elim = arena.lam(
+            seq2,
+            arena.lam(
+                tail_ty,
+                arena.sigma_elim(
+                    arena.lam(
+                        tail_ty,
+                        arena.app(
+                            arena.app(k(arena, "uniform"), arena.var(1)),
+                            arena.fst(arena.var(0)),
+                        ),
+                    ),
+                    arena.lam(
+                        fun_real,
+                        arena.lam(
+                            rest_ty,
+                            arena.app(
+                                arena.app(k(arena, "uniform"), arena.var(2)),
+                                arena.var(1),
+                            ),
+                        ),
+                    ),
+                    arena.var(0),
+                ),
+            ),
+        );
+        arena.sigma_elim(motive, elim, h)
     });
     register_axiom(sig, axioms, "uniform_from_cauchy", mtest_stmt);
     register_axiom(sig, axioms, "mtest", mtest_stmt);

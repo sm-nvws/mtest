@@ -106,6 +106,19 @@ impl<'scope> Arena<'scope> {
         })
     }
 
+    pub fn sigma_elim(
+        &self,
+        motive: TermId<'scope>,
+        elim: TermId<'scope>,
+        target: TermId<'scope>,
+    ) -> TermId<'scope> {
+        self.alloc(TermData::SigmaElim {
+            motive,
+            elim,
+            target,
+        })
+    }
+
     pub fn ann(&self, term: TermId<'scope>, ty: TermId<'scope>) -> TermId<'scope> {
         self.alloc(TermData::Ann(term, ty))
     }
