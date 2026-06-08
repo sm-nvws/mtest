@@ -64,8 +64,10 @@ pub fn build_analysis<'scope>(
     sig: &mut Signature<'scope>,
     axioms: &mut AxiomRegistry<'scope>,
 ) -> Analysis<'scope> {
-    let prop = arena.typ(fresh_level());
-    let real = arena.typ(fresh_level());
+    register_axiom(sig, axioms, "Real", arena.typ(fresh_level()));
+    register_axiom(sig, axioms, "Prop", arena.typ(fresh_level()));
+    let real = k(arena, "Real");
+    let prop = k(arena, "Prop");
     let nat = arena.nat();
     let seq = arr(arena, nat, real);
     let seq2 = arr(arena, nat, arr(arena, real, real));
