@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use crate::arena::Arena;
 use crate::context::Context;
 use crate::env::Env;
-use crate::error::{term_display, value_display, TyError};
+use crate::error::{value_display, TyError};
 use crate::level::{ConstraintSet, Level, LevelVar};
 use crate::norm::{def_eq, eval, quote};
 use crate::signature::{Entry, Signature};
@@ -41,7 +41,7 @@ pub fn check<'scope>(
     env: &Env<'scope>,
     term: TermId<'scope>,
     ty: Value<'scope>,
-) -> Result<(), TyError<'scope>> {
+) -> Result<(), TyError> {
     levels_mut(|levels| check_inner(arena, sig, ctx, env, levels, term, ty))
 }
 
@@ -53,16 +53,17 @@ fn check_inner<'scope>(
     levels: &mut ConstraintSet,
     term: TermId<'scope>,
     ty: Value<'scope>,
-) -> Result<(), TyError<'scope>> {
+) -> Result<(), TyError> {
     match arena.get(term) {
         TermData::Ann(t, ty_term) => {
             let expected = eval(arena, sig, ty_term, env);
             if !def_eq(arena, sig, env, levels, &expected, &ty) {
-                return Err(TyError::TypeMismatch {
+                return Err(TyError::type_mismatch(
+                    arena,
                     term,
-                    expected: value_display(&ty),
-                    found: value_display(&expected),
-                });
+                    value_display(&ty),
+                    value_display(&expected),
+                ));
             }
             check_inner(arena, sig, ctx, env, levels, t, ty)
         }
@@ -72,11 +73,12 @@ fn check_inner<'scope>(
                 let dom_val = eval(arena, sig, dom, pi_env);
                 let param_ty_val = eval(arena, sig, param_ty, env);
                 if !def_eq(arena, sig, env, levels, &param_ty_val, &dom_val) {
-                    return Err(TyError::TypeMismatch {
+                    return Err(TyError::type_mismatch(
+                        arena,
                         term,
-                        expected: value_display(&dom_val),
-                        found: term_display(arena, param_ty),
-                    });
+                        value_display(&dom_val),
+                        format!("{:?}", arena.get(param_ty)),
+                    ));
                 }
                 let new_ctx = ctx.extend(dom_val);
                 let new_env = env.extend(Value::VNeutral(Neutral::NVar(env.len())));
@@ -84,11 +86,12 @@ fn check_inner<'scope>(
                 let cod_val = eval(arena, sig, cod, &cod_env);
                 check_inner(arena, sig, &new_ctx, &new_env, levels, body, cod_val)
             }
-            _ => Err(TyError::TypeMismatch {
+            _ => Err(TyError::type_mismatch(
+                arena,
                 term,
-                expected: "Π-type".into(),
-                found: value_display(&ty),
-            }),
+                "Π-type",
+                value_display(&ty),
+            )),
         },
         TermData::Pair(fst, snd) => match &ty {
             Value::VSigma(sig_id, env_sig) => {
@@ -99,29 +102,22 @@ fn check_inner<'scope>(
                 let snd_ty = eval(arena, sig, b, &env_sig.extend(fst_val));
                 check_inner(arena, sig, ctx, env, levels, snd, snd_ty)
             }
-            _ => Err(TyError::TypeMismatch {
+            _ => Err(TyError::type_mismatch(
+                arena,
                 term,
-                expected: "Σ-type".into(),
-                found: value_display(&ty),
-            }),
+                "Σ-type",
+                value_display(&ty),
+            )),
         },
         TermData::Zero => {
             if !def_eq(arena, sig, env, levels, &ty, &Value::VNat) {
-                return Err(TyError::TypeMismatch {
-                    term,
-                    expected: value_display(&ty),
-                    found: "Nat".into(),
-                });
+                return Err(TyError::type_mismatch(arena, term, value_display(&ty), "Nat"));
             }
             Ok(())
         }
         TermData::Succ(n) => {
             if !def_eq(arena, sig, env, levels, &ty, &Value::VNat) {
-                return Err(TyError::TypeMismatch {
-                    term,
-                    expected: value_display(&ty),
-                    found: "Nat".into(),
-                });
+                return Err(TyError::type_mismatch(arena, term, value_display(&ty), "Nat"));
             }
             check_inner(arena, sig, ctx, env, levels, n, Value::VNat)
         }
@@ -143,11 +139,12 @@ fn check_inner<'scope>(
         _ => {
             let inferred = infer_inner(arena, sig, ctx, env, levels, term)?;
             if !def_eq(arena, sig, env, levels, &inferred, &ty) {
-                return Err(TyError::TypeMismatch {
+                return Err(TyError::type_mismatch(
+                    arena,
                     term,
-                    expected: value_display(&ty),
-                    found: value_display(&inferred),
-                });
+                    value_display(&ty),
+                    value_display(&inferred),
+                ));
             }
             Ok(())
         }
@@ -160,7 +157,7 @@ pub fn infer<'scope>(
     ctx: &Context<'scope>,
     env: &Env<'scope>,
     term: TermId<'scope>,
-) -> Result<Value<'scope>, TyError<'scope>> {
+) -> Result<Value<'scope>, TyError> {
     levels_mut(|levels| infer_inner(arena, sig, ctx, env, levels, term))
 }
 
@@ -171,7 +168,7 @@ fn infer_inner<'scope>(
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
     term: TermId<'scope>,
-) -> Result<Value<'scope>, TyError<'scope>> {
+) -> Result<Value<'scope>, TyError> {
     match arena.get(term) {
         TermData::Var(i) => Ok(ctx.lookup(i).clone()),
         TermData::Type(l) => {
@@ -192,11 +189,12 @@ fn infer_inner<'scope>(
                             levels.subtype(Level::var(l_cod), Level::var(lvl));
                             Ok(Value::VType(lvl))
                         }
-                        _ => Err(TyError::TypeMismatch {
+                        _ => Err(TyError::type_mismatch(
+                            arena,
                             term,
-                            expected: "universe".into(),
-                            found: value_display(&b_ty),
-                        }),
+                            "universe",
+                            value_display(&b_ty),
+                        )),
                     }
                 }
                 _ => {
@@ -233,21 +231,18 @@ fn infer_inner<'scope>(
                             levels.subtype(Level::var(l1), Level::var(l2));
                             Ok(Value::VType(l2))
                         }
-                        _ => Err(TyError::TypeMismatch {
+                        _ => Err(TyError::type_mismatch(
+                            arena,
                             term,
-                            expected: "universe".into(),
-                            found: value_display(&b_ty),
-                        }),
+                            "universe",
+                            value_display(&b_ty),
+                        )),
                     }
                 }
-                _ => Err(TyError::TypeMismatch {
-                    term,
-                    expected: "universe".into(),
-                    found: "Σ-type".into(),
-                }),
+                _ => Err(TyError::type_mismatch(arena, term, "universe", "Σ-type")),
             }
         }
-        TermData::Pair(_, _) => Err(TyError::CannotInfer { term }),
+        TermData::Pair(_, _) => Err(TyError::cannot_infer(arena, term)),
         TermData::Fst(p) => {
             let pair_ty = infer_inner(arena, sig, ctx, env, levels, p)?;
             match pair_ty {
@@ -255,11 +250,12 @@ fn infer_inner<'scope>(
                     let (a, _) = sigma_parts(arena, sig_id)?;
                     Ok(eval(arena, sig, a, &env_sig))
                 }
-                _ => Err(TyError::TypeMismatch {
+                _ => Err(TyError::type_mismatch(
+                    arena,
                     term,
-                    expected: "Σ-type".into(),
-                    found: value_display(&pair_ty),
-                }),
+                    "Σ-type",
+                    value_display(&pair_ty),
+                )),
             }
         }
         TermData::Snd(p) => {
@@ -270,15 +266,16 @@ fn infer_inner<'scope>(
                     let pair_val = eval(arena, sig, p, env);
                     let fst_val = match pair_val {
                         Value::VPair(f, _) => *f,
-                        _ => return Err(TyError::CannotInfer { term }),
+                        _ => return Err(TyError::cannot_infer(arena, term)),
                     };
                     Ok(eval(arena, sig, b, &env_sig.extend(fst_val)))
                 }
-                _ => Err(TyError::TypeMismatch {
+                _ => Err(TyError::type_mismatch(
+                    arena,
                     term,
-                    expected: "Σ-type".into(),
-                    found: value_display(&pair_ty),
-                }),
+                    "Σ-type",
+                    value_display(&pair_ty),
+                )),
             }
         }
         TermData::Nat => Ok(Value::VType(levels.fresh())),
@@ -287,7 +284,9 @@ fn infer_inner<'scope>(
             check_inner(arena, sig, ctx, env, levels, n, Value::VNat)?;
             Ok(Value::VNat)
         }
-        TermData::NatElim { .. } | TermData::SigmaElim { .. } => Err(TyError::CannotInfer { term }),
+        TermData::NatElim { .. } | TermData::SigmaElim { .. } => {
+            Err(TyError::cannot_infer(arena, term))
+        }
         TermData::Ann(t, ty) => {
             let expected = eval(arena, sig, ty, env);
             check_inner(arena, sig, ctx, env, levels, t, expected.clone())?;
@@ -307,25 +306,27 @@ fn app_infer<'scope>(
     _f: TermId<'scope>,
     x: TermId<'scope>,
     fun_ty: Value<'scope>,
-) -> Result<Value<'scope>, TyError<'scope>> {
+) -> Result<Value<'scope>, TyError> {
     let (pi_id, pi_env) = match fun_ty {
         Value::VPi(pi_id, pi_env) => (pi_id, pi_env),
         Value::VConst(_, ref ty) => match ty.as_ref() {
             Value::VPi(pi_id, pi_env) => (*pi_id, pi_env.clone()),
             _ => {
-                return Err(TyError::TypeMismatch {
+                return Err(TyError::type_mismatch(
+                    arena,
                     term,
-                    expected: "Π-type".into(),
-                    found: value_display(&fun_ty),
-                });
+                    "Π-type",
+                    value_display(&fun_ty),
+                ));
             }
         },
         _ => {
-            return Err(TyError::TypeMismatch {
+            return Err(TyError::type_mismatch(
+                arena,
                 term,
-                expected: "Π-type".into(),
-                found: value_display(&fun_ty),
-            });
+                "Π-type",
+                value_display(&fun_ty),
+            ));
         }
     };
     let (dom, cod) = pi_parts(arena, pi_id)?;
@@ -340,12 +341,9 @@ fn lookup_const<'scope>(
     sig: &Signature<'scope>,
     term: TermId<'scope>,
     name: &crate::term::Name,
-) -> Result<Value<'scope>, TyError<'scope>> {
+) -> Result<Value<'scope>, TyError> {
     let Some(entry) = sig.get(name) else {
-        return Err(TyError::UnknownConst {
-            term,
-            name: name.clone(),
-        });
+        return Err(TyError::unknown_const(arena, term, name.clone()));
     };
     let ty = match entry {
         Entry::Def { ty, .. } | Entry::Axiom { ty } => *ty,
@@ -360,20 +358,20 @@ fn lookup_const<'scope>(
 fn pi_parts<'scope>(
     arena: &Arena<'scope>,
     pi_id: TermId<'scope>,
-) -> Result<(TermId<'scope>, TermId<'scope>), TyError<'scope>> {
+) -> Result<(TermId<'scope>, TermId<'scope>), TyError> {
     match arena.get(pi_id) {
         TermData::Pi(a, b) => Ok((a, b)),
-        _ => Err(TyError::InvalidElim { term: pi_id }),
+        _ => Err(TyError::invalid_elim(arena, pi_id)),
     }
 }
 
 fn sigma_parts<'scope>(
     arena: &Arena<'scope>,
     sig_id: TermId<'scope>,
-) -> Result<(TermId<'scope>, TermId<'scope>), TyError<'scope>> {
+) -> Result<(TermId<'scope>, TermId<'scope>), TyError> {
     match arena.get(sig_id) {
         TermData::Sigma(a, b) => Ok((a, b)),
-        _ => Err(TyError::InvalidElim { term: sig_id }),
+        _ => Err(TyError::invalid_elim(arena, sig_id)),
     }
 }
 
@@ -388,16 +386,17 @@ fn check_sigma_elim<'scope>(
     motive: TermId<'scope>,
     elim: TermId<'scope>,
     target: TermId<'scope>,
-) -> Result<(), TyError<'scope>> {
+) -> Result<(), TyError> {
     let target_ty = infer_inner(arena, sig, ctx, env, levels, target)?;
     let (sig_id, _env_sig) = match target_ty {
         Value::VSigma(sig_id, env_sig) => (sig_id, env_sig),
         _ => {
-            return Err(TyError::TypeMismatch {
-                term: target,
-                expected: "Σ-type".into(),
-                found: value_display(&target_ty),
-            });
+            return Err(TyError::type_mismatch(
+                arena,
+                target,
+                "Σ-type",
+                value_display(&target_ty),
+            ));
         }
     };
     let (a_ty, b_ty) = sigma_parts(arena, sig_id)?;
@@ -429,11 +428,12 @@ fn check_sigma_elim<'scope>(
     )?;
     let expected = eval(arena, sig, arena.app(motive, target), env);
     if !def_eq(arena, sig, env, levels, &expected, &ty) {
-        return Err(TyError::TypeMismatch {
+        return Err(TyError::type_mismatch(
+            arena,
             term,
-            expected: value_display(&ty),
-            found: value_display(&expected),
-        });
+            value_display(&ty),
+            value_display(&expected),
+        ));
     }
     Ok(())
 }
@@ -450,7 +450,7 @@ fn check_nat_elim<'scope>(
     base: TermId<'scope>,
     step: TermId<'scope>,
     target: TermId<'scope>,
-) -> Result<(), TyError<'scope>> {
+) -> Result<(), TyError> {
     let motive_pi = arena.pi(arena.nat(), arena.typ(levels.fresh()));
     check_inner(
         arena,
@@ -482,11 +482,12 @@ fn check_nat_elim<'scope>(
     check_inner(arena, sig, ctx, env, levels, target, Value::VNat)?;
     let expected = eval(arena, sig, arena.app(motive, target), env);
     if !def_eq(arena, sig, env, levels, &expected, &ty) {
-        return Err(TyError::TypeMismatch {
+        return Err(TyError::type_mismatch(
+            arena,
             term,
-            expected: value_display(&ty),
-            found: value_display(&expected),
-        });
+            value_display(&ty),
+            value_display(&expected),
+        ));
     }
     Ok(())
 }

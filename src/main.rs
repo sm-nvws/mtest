@@ -48,7 +48,7 @@ fn main() {
         for (label, proof, stmt) in steps {
             let stmt_val = eval(&arena, &sig, stmt, &env);
             if let Err(e) = check(&arena, &sig, &ctx, &env, proof, stmt_val) {
-                eprintln!("{label} failed: {e:?}");
+                eprintln!("{label} failed: {e}");
                 std::process::exit(1);
             }
         }
