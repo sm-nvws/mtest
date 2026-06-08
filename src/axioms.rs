@@ -1,28 +1,7 @@
-use std::collections::HashMap;
-
 use crate::arena::Arena;
 use crate::check::fresh_level;
 use crate::signature::Signature;
 use crate::term::{Name, TermId};
-
-#[derive(Clone, Default)]
-pub struct AxiomRegistry<'scope> {
-    types: HashMap<Name, TermId<'scope>>,
-}
-
-impl<'scope> AxiomRegistry<'scope> {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn register(&mut self, name: Name, ty: TermId<'scope>) {
-        self.types.insert(name, ty);
-    }
-
-    pub fn get_type(&self, name: &Name) -> Option<TermId<'scope>> {
-        self.types.get(name).copied()
-    }
-}
 
 pub struct Analysis<'scope> {
     pub cauchy_thm: TermId<'scope>,
@@ -32,15 +11,8 @@ pub struct Analysis<'scope> {
     pub mtest_proof: TermId<'scope>,
 }
 
-fn register_axiom<'scope>(
-    sig: &mut Signature<'scope>,
-    axioms: &mut AxiomRegistry<'scope>,
-    name: &str,
-    ty: TermId<'scope>,
-) {
-    let n = Name(name.into());
-    axioms.register(n.clone(), ty);
-    sig.insert_axiom(n, ty);
+fn register_axiom<'scope>(sig: &mut Signature<'scope>, name: &str, ty: TermId<'scope>) {
+    sig.insert_axiom(Name(name.into()), ty);
 }
 
 fn arr<'scope>(arena: &Arena<'scope>, dom: TermId<'scope>, cod: TermId<'scope>) -> TermId<'scope> {
@@ -96,10 +68,9 @@ fn uniform_conv<'scope>(
 pub fn build_analysis<'scope>(
     arena: &Arena<'scope>,
     sig: &mut Signature<'scope>,
-    axioms: &mut AxiomRegistry<'scope>,
 ) -> Analysis<'scope> {
-    register_axiom(sig, axioms, "Real", arena.typ(fresh_level()));
-    register_axiom(sig, axioms, "Prop", arena.typ(fresh_level()));
+    register_axiom(sig, "Real", arena.typ(fresh_level()));
+    register_axiom(sig, "Prop", arena.typ(fresh_level()));
     let real = k(arena, "Real");
     let prop = k(arena, "Prop");
     let nat = arena.nat();
@@ -107,26 +78,25 @@ pub fn build_analysis<'scope>(
     let seq2 = arr(arena, nat, arr(arena, real, real));
     let fun_real = arr(arena, real, real);
 
-    register_axiom(sig, axioms, "zero", real);
-    register_axiom(sig, axioms, "one", real);
-    register_axiom(sig, axioms, "add", arr(arena, real, arr(arena, real, real)));
-    register_axiom(sig, axioms, "sub", arr(arena, real, arr(arena, real, real)));
-    register_axiom(sig, axioms, "neg", arr(arena, real, real));
-    register_axiom(sig, axioms, "abs", arr(arena, real, real));
-    register_axiom(sig, axioms, "le", arr(arena, real, arr(arena, real, prop)));
-    register_axiom(sig, axioms, "lt", arr(arena, real, arr(arena, real, prop)));
-    register_axiom(sig, axioms, "nat_le", arr(arena, nat, arr(arena, nat, prop)));
+    register_axiom(sig, "zero", real);
+    register_axiom(sig, "one", real);
+    register_axiom(sig, "add", arr(arena, real, arr(arena, real, real)));
+    register_axiom(sig, "sub", arr(arena, real, arr(arena, real, real)));
+    register_axiom(sig, "neg", arr(arena, real, real));
+    register_axiom(sig, "abs", arr(arena, real, real));
+    register_axiom(sig, "le", arr(arena, real, arr(arena, real, prop)));
+    register_axiom(sig, "lt", arr(arena, real, arr(arena, real, prop)));
+    register_axiom(sig, "nat_le", arr(arena, nat, arr(arena, nat, prop)));
 
     register_axiom(
         sig,
-        axioms,
         "choice",
         arr(arena, prop, arr(arena, prop, arr(arena, arr(arena, prop, prop), prop))),
     );
 
-    register_axiom(sig, axioms, "cauchy", arr(arena, seq, prop));
-    register_axiom(sig, axioms, "conv", arr(arena, seq, arr(arena, real, prop)));
-    register_axiom(sig, axioms, "conv_exists", arr(arena, seq, prop));
+    register_axiom(sig, "cauchy", arr(arena, seq, prop));
+    register_axiom(sig, "conv", arr(arena, seq, arr(arena, real, prop)));
+    register_axiom(sig, "conv_exists", arr(arena, seq, prop));
 
     let cauchy_thm = dep_pi(arena, seq, |s| {
         arr(
@@ -135,14 +105,14 @@ pub fn build_analysis<'scope>(
             arena.app(k(arena, "conv_exists"), s),
         )
     });
-    register_axiom(sig, axioms, "complete", cauchy_thm);
-    register_axiom(sig, axioms, "cauchy_crit", cauchy_thm);
-    register_axiom(sig, axioms, "cauchy_pf", cauchy_thm);
+    register_axiom(sig, "complete", cauchy_thm);
+    register_axiom(sig, "cauchy_crit", cauchy_thm);
+    register_axiom(sig, "cauchy_pf", cauchy_thm);
 
     let uniform_ty = dep_pi(arena, seq2, |fs| {
         dep_pi(arena, fun_real, |f| uniform_conv(arena, nat, real, fs, f))
     });
-    register_axiom(sig, axioms, "uniform", uniform_ty);
+    register_axiom(sig, "uniform", uniform_ty);
 
     let dominated = arena.pi(
         nat,
@@ -203,8 +173,8 @@ pub fn build_analysis<'scope>(
         );
         arena.sigma_elim(motive, elim, h)
     });
-    register_axiom(sig, axioms, "uniform_from_cauchy", mtest_stmt);
-    register_axiom(sig, axioms, "mtest", mtest_stmt);
+    register_axiom(sig, "uniform_from_cauchy", mtest_stmt);
+    register_axiom(sig, "mtest", mtest_stmt);
 
     let cauchy_proof = arena.ann(k(arena, "cauchy_pf"), cauchy_thm);
     let uniform_proof = arena.ann(k(arena, "uniform_from_cauchy"), mtest_stmt);

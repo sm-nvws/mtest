@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 
 use crate::arena::Arena;
-use crate::axioms::AxiomRegistry;
 use crate::context::Context;
 use crate::env::Env;
 use crate::error::{term_display, value_display, TyError};
@@ -38,19 +37,17 @@ where
 pub fn check<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
-    axioms: &AxiomRegistry<'scope>,
     ctx: &Context<'scope>,
     env: &Env<'scope>,
     term: TermId<'scope>,
     ty: Value<'scope>,
 ) -> Result<(), TyError<'scope>> {
-    levels_mut(|levels| check_inner(arena, sig, axioms, ctx, env, levels, term, ty))
+    levels_mut(|levels| check_inner(arena, sig, ctx, env, levels, term, ty))
 }
 
 fn check_inner<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
-    axioms: &AxiomRegistry<'scope>,
     ctx: &Context<'scope>,
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
@@ -67,7 +64,7 @@ fn check_inner<'scope>(
                     found: value_display(&expected),
                 });
             }
-            check_inner(arena, sig, axioms, ctx, env, levels, t, ty)
+            check_inner(arena, sig, ctx, env, levels, t, ty)
         }
         TermData::Lam(param_ty, body) => match &ty {
             Value::VPi(pi_id, pi_env) => {
@@ -85,7 +82,7 @@ fn check_inner<'scope>(
                 let new_env = env.extend(Value::VNeutral(Neutral::NVar(env.len())));
                 let cod_env = pi_env.extend(Value::VNeutral(Neutral::NVar(pi_env.len())));
                 let cod_val = eval(arena, sig, cod, &cod_env);
-                check_inner(arena, sig, axioms, &new_ctx, &new_env, levels, body, cod_val)
+                check_inner(arena, sig, &new_ctx, &new_env, levels, body, cod_val)
             }
             _ => Err(TyError::TypeMismatch {
                 term,
@@ -97,10 +94,10 @@ fn check_inner<'scope>(
             Value::VSigma(sig_id, env_sig) => {
                 let (a, b) = sigma_parts(arena, *sig_id)?;
                 let fst_ty = eval(arena, sig, a, env_sig);
-                check_inner(arena, sig, axioms, ctx, env, levels, fst, fst_ty)?;
+                check_inner(arena, sig, ctx, env, levels, fst, fst_ty)?;
                 let fst_val = eval(arena, sig, fst, env);
                 let snd_ty = eval(arena, sig, b, &env_sig.extend(fst_val));
-                check_inner(arena, sig, axioms, ctx, env, levels, snd, snd_ty)
+                check_inner(arena, sig, ctx, env, levels, snd, snd_ty)
             }
             _ => Err(TyError::TypeMismatch {
                 term,
@@ -126,7 +123,7 @@ fn check_inner<'scope>(
                     found: "Nat".into(),
                 });
             }
-            check_inner(arena, sig, axioms, ctx, env, levels, n, Value::VNat)
+            check_inner(arena, sig, ctx, env, levels, n, Value::VNat)
         }
         TermData::NatElim {
             motive,
@@ -134,17 +131,17 @@ fn check_inner<'scope>(
             step,
             target,
         } => check_nat_elim(
-            arena, sig, axioms, ctx, env, levels, term, ty, motive, base, step, target,
+            arena, sig, ctx, env, levels, term, ty, motive, base, step, target,
         ),
         TermData::SigmaElim {
             motive,
             elim,
             target,
         } => check_sigma_elim(
-            arena, sig, axioms, ctx, env, levels, term, ty, motive, elim, target,
+            arena, sig, ctx, env, levels, term, ty, motive, elim, target,
         ),
         _ => {
-            let inferred = infer_inner(arena, sig, axioms, ctx, env, levels, term)?;
+            let inferred = infer_inner(arena, sig, ctx, env, levels, term)?;
             if !def_eq(arena, sig, env, levels, &inferred, &ty) {
                 return Err(TyError::TypeMismatch {
                     term,
@@ -160,18 +157,16 @@ fn check_inner<'scope>(
 pub fn infer<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
-    axioms: &AxiomRegistry<'scope>,
     ctx: &Context<'scope>,
     env: &Env<'scope>,
     term: TermId<'scope>,
 ) -> Result<Value<'scope>, TyError<'scope>> {
-    levels_mut(|levels| infer_inner(arena, sig, axioms, ctx, env, levels, term))
+    levels_mut(|levels| infer_inner(arena, sig, ctx, env, levels, term))
 }
 
 fn infer_inner<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
-    axioms: &AxiomRegistry<'scope>,
     ctx: &Context<'scope>,
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
@@ -185,12 +180,12 @@ fn infer_inner<'scope>(
             Ok(Value::VType(lift))
         }
         TermData::Pi(a, b) => {
-            let a_ty = infer_inner(arena, sig, axioms, ctx, env, levels, a)?;
+            let a_ty = infer_inner(arena, sig, ctx, env, levels, a)?;
             match a_ty {
                 Value::VType(l_dom) => {
                     let new_ctx = ctx.extend(Value::VType(l_dom));
                     let new_env = env.extend(Value::VNeutral(Neutral::NVar(env.len())));
-                    let b_ty = infer_inner(arena, sig, axioms, &new_ctx, &new_env, levels, b)?;
+                    let b_ty = infer_inner(arena, sig, &new_ctx, &new_env, levels, b)?;
                     match b_ty {
                         Value::VType(l_cod) => {
                             let lvl = levels.fresh();
@@ -207,7 +202,7 @@ fn infer_inner<'scope>(
                 _ => {
                     let new_ctx = ctx.extend(a_ty.clone());
                     let new_env = env.extend(Value::VNeutral(Neutral::NVar(env.len())));
-                    let _cod = infer_inner(arena, sig, axioms, &new_ctx, &new_env, levels, b)?;
+                    let _cod = infer_inner(arena, sig, &new_ctx, &new_env, levels, b)?;
                     let pi_id = arena.pi(a, b);
                     Ok(Value::VPi(pi_id, env.clone()))
                 }
@@ -217,22 +212,22 @@ fn infer_inner<'scope>(
             let dom = eval(arena, sig, param_ty, env);
             let new_ctx = ctx.extend(dom.clone());
             let new_env = env.extend(Value::VNeutral(Neutral::NVar(env.len())));
-            let cod_val = infer_inner(arena, sig, axioms, &new_ctx, &new_env, levels, body)?;
+            let cod_val = infer_inner(arena, sig, &new_ctx, &new_env, levels, body)?;
             let cod_term = quote(arena, sig, &cod_val, new_env.len());
             let pi_id = arena.pi(param_ty, cod_term);
             Ok(Value::VPi(pi_id, env.clone()))
         }
         TermData::App(f, x) => {
-            let fun_ty = infer_inner(arena, sig, axioms, ctx, env, levels, f)?;
-            app_infer(arena, sig, axioms, ctx, env, levels, term, f, x, fun_ty)
+            let fun_ty = infer_inner(arena, sig, ctx, env, levels, f)?;
+            app_infer(arena, sig, ctx, env, levels, term, f, x, fun_ty)
         }
         TermData::Sigma(a, b) => {
-            let a_ty = infer_inner(arena, sig, axioms, ctx, env, levels, a)?;
+            let a_ty = infer_inner(arena, sig, ctx, env, levels, a)?;
             match a_ty {
                 Value::VType(l1) => {
                     let new_ctx = ctx.extend(Value::VType(l1));
                     let new_env = env.extend(Value::VNeutral(Neutral::NVar(env.len())));
-                    let b_ty = infer_inner(arena, sig, axioms, &new_ctx, &new_env, levels, b)?;
+                    let b_ty = infer_inner(arena, sig, &new_ctx, &new_env, levels, b)?;
                     match b_ty {
                         Value::VType(l2) => {
                             levels.subtype(Level::var(l1), Level::var(l2));
@@ -254,7 +249,7 @@ fn infer_inner<'scope>(
         }
         TermData::Pair(_, _) => Err(TyError::CannotInfer { term }),
         TermData::Fst(p) => {
-            let pair_ty = infer_inner(arena, sig, axioms, ctx, env, levels, p)?;
+            let pair_ty = infer_inner(arena, sig, ctx, env, levels, p)?;
             match pair_ty {
                 Value::VSigma(sig_id, env_sig) => {
                     let (a, _) = sigma_parts(arena, sig_id)?;
@@ -268,7 +263,7 @@ fn infer_inner<'scope>(
             }
         }
         TermData::Snd(p) => {
-            let pair_ty = infer_inner(arena, sig, axioms, ctx, env, levels, p)?;
+            let pair_ty = infer_inner(arena, sig, ctx, env, levels, p)?;
             match pair_ty {
                 Value::VSigma(sig_id, env_sig) => {
                     let (_a, b) = sigma_parts(arena, sig_id)?;
@@ -289,23 +284,22 @@ fn infer_inner<'scope>(
         TermData::Nat => Ok(Value::VType(levels.fresh())),
         TermData::Zero => Ok(Value::VNat),
         TermData::Succ(n) => {
-            check_inner(arena, sig, axioms, ctx, env, levels, n, Value::VNat)?;
+            check_inner(arena, sig, ctx, env, levels, n, Value::VNat)?;
             Ok(Value::VNat)
         }
         TermData::NatElim { .. } | TermData::SigmaElim { .. } => Err(TyError::CannotInfer { term }),
         TermData::Ann(t, ty) => {
             let expected = eval(arena, sig, ty, env);
-            check_inner(arena, sig, axioms, ctx, env, levels, t, expected.clone())?;
+            check_inner(arena, sig, ctx, env, levels, t, expected.clone())?;
             Ok(expected)
         }
-        TermData::Const(name) => lookup_const(arena, sig, axioms, term, &name),
+        TermData::Const(name) => lookup_const(arena, sig, term, &name),
     }
 }
 
 fn app_infer<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
-    axioms: &AxiomRegistry<'scope>,
     ctx: &Context<'scope>,
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
@@ -337,34 +331,29 @@ fn app_infer<'scope>(
     let (dom, cod) = pi_parts(arena, pi_id)?;
     let dom_val = eval(arena, sig, dom, &pi_env);
     let arg_val = eval(arena, sig, x, env);
-    check_inner(arena, sig, axioms, ctx, env, levels, x, dom_val)?;
+    check_inner(arena, sig, ctx, env, levels, x, dom_val)?;
     Ok(eval(arena, sig, cod, &pi_env.extend(arg_val)))
 }
 
 fn lookup_const<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
-    axioms: &AxiomRegistry<'scope>,
     term: TermId<'scope>,
     name: &crate::term::Name,
 ) -> Result<Value<'scope>, TyError<'scope>> {
-    let ty = if let Some(entry) = sig.get(name) {
-        match entry {
-            Entry::Def { ty, .. } | Entry::Axiom { ty } => *ty,
-        }
-    } else if let Some(ty) = axioms.get_type(name) {
-        ty
-    } else {
+    let Some(entry) = sig.get(name) else {
         return Err(TyError::UnknownConst {
             term,
             name: name.clone(),
         });
     };
+    let ty = match entry {
+        Entry::Def { ty, .. } | Entry::Axiom { ty } => *ty,
+    };
     let vty = eval(arena, sig, ty, &Env::new());
-    match sig.get(name) {
-        Some(Entry::Def { .. }) => Ok(vty),
-        Some(Entry::Axiom { .. }) => Ok(Value::VConst(name.clone(), Box::new(vty))),
-        None => Ok(Value::VConst(name.clone(), Box::new(vty))),
+    match entry {
+        Entry::Def { .. } => Ok(vty),
+        Entry::Axiom { .. } => Ok(Value::VConst(name.clone(), Box::new(vty))),
     }
 }
 
@@ -391,7 +380,6 @@ fn sigma_parts<'scope>(
 fn check_sigma_elim<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
-    axioms: &AxiomRegistry<'scope>,
     ctx: &Context<'scope>,
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
@@ -401,7 +389,7 @@ fn check_sigma_elim<'scope>(
     elim: TermId<'scope>,
     target: TermId<'scope>,
 ) -> Result<(), TyError<'scope>> {
-    let target_ty = infer_inner(arena, sig, axioms, ctx, env, levels, target)?;
+    let target_ty = infer_inner(arena, sig, ctx, env, levels, target)?;
     let (sig_id, _env_sig) = match target_ty {
         Value::VSigma(sig_id, env_sig) => (sig_id, env_sig),
         _ => {
@@ -417,7 +405,6 @@ fn check_sigma_elim<'scope>(
     check_inner(
         arena,
         sig,
-        axioms,
         ctx,
         env,
         levels,
@@ -434,7 +421,6 @@ fn check_sigma_elim<'scope>(
     check_inner(
         arena,
         sig,
-        axioms,
         ctx,
         env,
         levels,
@@ -455,7 +441,6 @@ fn check_sigma_elim<'scope>(
 fn check_nat_elim<'scope>(
     arena: &Arena<'scope>,
     sig: &Signature<'scope>,
-    axioms: &AxiomRegistry<'scope>,
     ctx: &Context<'scope>,
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
@@ -470,7 +455,6 @@ fn check_nat_elim<'scope>(
     check_inner(
         arena,
         sig,
-        axioms,
         ctx,
         env,
         levels,
@@ -478,7 +462,7 @@ fn check_nat_elim<'scope>(
         Value::VPi(motive_pi, env.clone()),
     )?;
     let base_ty = eval(arena, sig, arena.app(motive, arena.zero()), env);
-    check_inner(arena, sig, axioms, ctx, env, levels, base, base_ty)?;
+    check_inner(arena, sig, ctx, env, levels, base, base_ty)?;
     let step_ty = arena.pi(
         arena.nat(),
         arena.pi(
@@ -489,14 +473,13 @@ fn check_nat_elim<'scope>(
     check_inner(
         arena,
         sig,
-        axioms,
         ctx,
         env,
         levels,
         step,
         eval(arena, sig, step_ty, env),
     )?;
-    check_inner(arena, sig, axioms, ctx, env, levels, target, Value::VNat)?;
+    check_inner(arena, sig, ctx, env, levels, target, Value::VNat)?;
     let expected = eval(arena, sig, arena.app(motive, target), env);
     if !def_eq(arena, sig, env, levels, &expected, &ty) {
         return Err(TyError::TypeMismatch {

@@ -22,11 +22,10 @@ fn main() {
     reset_levels();
     with_scope(|arena| {
         let mut sig = Signature::new();
-        let mut axioms_registry = axioms::AxiomRegistry::new();
         let ctx = Context::new();
         let env = Env::new();
 
-        let analysis = build_analysis(&arena, &mut sig, &mut axioms_registry);
+        let analysis = build_analysis(&arena, &mut sig);
 
         let steps = [
             (
@@ -48,15 +47,7 @@ fn main() {
 
         for (label, proof, stmt) in steps {
             let stmt_val = eval(&arena, &sig, stmt, &env);
-            if let Err(e) = check(
-                &arena,
-                &sig,
-                &axioms_registry,
-                &ctx,
-                &env,
-                proof,
-                stmt_val,
-            ) {
+            if let Err(e) = check(&arena, &sig, &ctx, &env, proof, stmt_val) {
                 eprintln!("{label} failed: {e:?}");
                 std::process::exit(1);
             }
