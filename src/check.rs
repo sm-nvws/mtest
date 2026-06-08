@@ -311,26 +311,31 @@ fn app_infer<'scope>(
     x: TermId<'scope>,
     fun_ty: Value<'scope>,
 ) -> Result<Value<'scope>, TyError<'scope>> {
-    let pi = match fun_ty {
-        Value::VPi(pi_id, _) => Some(pi_id),
+    let (pi_id, pi_env) = match fun_ty {
+        Value::VPi(pi_id, pi_env) => (pi_id, pi_env),
         Value::VConst(_, ref ty) => match ty.as_ref() {
-            Value::VPi(pi_id, _) => Some(*pi_id),
-            _ => None,
+            Value::VPi(pi_id, pi_env) => (*pi_id, pi_env.clone()),
+            _ => {
+                return Err(TyError::TypeMismatch {
+                    term,
+                    expected: "Π-type".into(),
+                    found: value_display(&fun_ty),
+                });
+            }
         },
-        _ => None,
-    };
-    let Some(pi_id) = pi else {
-        return Err(TyError::TypeMismatch {
-            term,
-            expected: "Π-type".into(),
-            found: value_display(&fun_ty),
-        });
+        _ => {
+            return Err(TyError::TypeMismatch {
+                term,
+                expected: "Π-type".into(),
+                found: value_display(&fun_ty),
+            });
+        }
     };
     let (dom, cod) = pi_parts(arena, pi_id)?;
-    let dom_val = eval(arena, sig, dom, env);
+    let dom_val = eval(arena, sig, dom, &pi_env);
     let arg_val = eval(arena, sig, x, env);
     check_inner(arena, sig, axioms, ctx, env, levels, x, dom_val)?;
-    Ok(eval(arena, sig, cod, &env.extend(arg_val)))
+    Ok(eval(arena, sig, cod, &pi_env.extend(arg_val)))
 }
 
 fn lookup_const<'scope>(
