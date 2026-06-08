@@ -79,8 +79,8 @@ pub fn build_analysis<'scope>(
     register_axiom(sig, axioms, "sub", arr(arena, real, real));
     register_axiom(sig, axioms, "neg", arr(arena, real, real));
     register_axiom(sig, axioms, "abs", arr(arena, real, real));
-    register_axiom(sig, axioms, "le", arr(arena, real, prop));
-    register_axiom(sig, axioms, "lt", arr(arena, real, prop));
+    register_axiom(sig, axioms, "le", arr(arena, real, arr(arena, real, prop)));
+    register_axiom(sig, axioms, "lt", arr(arena, real, arr(arena, real, prop)));
 
     register_axiom(
         sig,
@@ -106,16 +106,19 @@ pub fn build_analysis<'scope>(
 
     register_axiom(sig, axioms, "uniform", arr(arena, seq2, arr(arena, fun_real, prop)));
 
-    let bound = arena.pi(
+    let dominated = arena.pi(
         nat,
         arena.pi(
             real,
             arena.app(
-                k(arena, "le"),
                 arena.app(
-                    k(arena, "abs"),
-                    arena.app(arena.app(arena.var(5), arena.var(1)), arena.var(0)),
+                    k(arena, "le"),
+                    arena.app(
+                        k(arena, "abs"),
+                        arena.app(arena.app(arena.var(4), arena.var(1)), arena.var(0)),
+                    ),
                 ),
+                arena.app(arena.var(2), arena.var(1)),
             ),
         ),
     );
@@ -125,7 +128,7 @@ pub fn build_analysis<'scope>(
             fun_real,
             arena.sigma(
                 seq,
-                arena.sigma(arena.app(k(arena, "cauchy"), arena.var(0)), bound),
+                arena.sigma(arena.app(k(arena, "cauchy"), arena.var(0)), dominated),
             ),
         ),
     );
