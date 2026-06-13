@@ -72,10 +72,10 @@ impl ConstraintSet {
 
     fn unify_into(&mut self, v: LevelVar, target: Level) {
         let target = self.normalize(target);
-        if let Level::Var(v2) = &target {
-            if v2 == &v {
-                return;
-            }
+        if let Level::Var(v2) = &target
+            && v2 == &v
+        {
+            return;
         }
         if let Some(existing) = self.assign.get(&v).cloned() {
             let existing = self.normalize(existing);
@@ -83,77 +83,51 @@ impl ConstraintSet {
             return;
         }
         if let Level::Var(other) = target {
-            if self.assign.contains_key(&other) {
-                let t = self.assign.get(&other).cloned().unwrap();
+            if let Some(t) = self.assign.get(&other).cloned() {
                 self.unify_into(v, t);
-                return;
+            } else {
+                self.assign.insert(other, Level::Var(v));
             }
-            self.assign.insert(other, Level::Var(v));
             return;
         }
         self.assign.insert(v, target);
     }
 
-    fn unify_pair(&mut self, a: Level, b: Level) {
-        let a = self.normalize(a);
-        let b = self.normalize(b);
-        match (&a, &b) {
-            (Level::Zero, Level::Zero) => {}
-            (Level::Succ(a1), Level::Succ(b1)) => self.unify_pair(*a1.clone(), *b1.clone()),
-            (Level::Var(va), _) => self.unify_into(*va, b),
-            (_, Level::Var(vb)) => self.unify_into(*vb, a),
-            _ => self.leq.push((a, b)),
-        }
-    }
-
+    /// Solve the accumulated `a <= b` constraints.
+    ///
+    /// Levels are built from `Zero`, `Succ` and unification variables. The
+    /// work list is drained until empty: `Succ`/`Succ` pairs are decomposed,
+    /// a variable on either side is unified, and only an impossible
+    /// `Succ(..) <= Zero` is reported as inconsistent (a free variable upper
+    /// bound is always satisfiable). A fuel counter guarantees termination
+    /// even when variable unification keeps re-enqueuing equalities.
     pub fn solve(&mut self) -> Result<(), LevelError> {
-        let leq: Vec<_> = self.leq.drain(..).collect();
-        for (a, b) in leq {
+        let mut fuel = self.leq.len().saturating_mul(8) + 64;
+        while let Some((a, b)) = self.leq.pop() {
+            if fuel == 0 {
+                break;
+            }
+            fuel -= 1;
             let a = self.normalize(a);
             let b = self.normalize(b);
             match (&a, &b) {
+                (Level::Zero, _) => {}
+                (Level::Succ(_), Level::Zero) => return Err(LevelError::Inconsistent),
+                (Level::Succ(a1), Level::Succ(b1)) => {
+                    self.leq.push((*a1.clone(), *b1.clone()));
+                }
                 (Level::Var(v), _) => self.unify_into(*v, b),
-                (_, Level::Var(v)) => self.unify_into(*v, a),
-                (Level::Zero, Level::Zero) => {}
-                (Level::Succ(a1), Level::Succ(b1)) => self.unify_pair(*a1.clone(), *b1.clone()),
-                (Level::Zero, Level::Succ(_)) | (Level::Succ(_), Level::Zero) => {
-                    return Err(LevelError::Inconsistent);
-                }
-                (Level::Succ(_), Level::Succ(_)) => {}
-            }
-        }
-
-        let mut pending: Vec<(Level, Level)> = self.leq.clone();
-        while !pending.is_empty() {
-            let mut next = Vec::new();
-            for (sub, sup) in &pending {
-                let sub = self.normalize(sub.clone());
-                let sup = self.normalize(sup.clone());
-                match (&sub, &sup) {
-                    (Level::Var(v), _) => self.unify_into(*v, sup),
-                    (_, Level::Var(v)) => {
-                        if let Some(h) = Self::level_height(&sub) {
-                            let mut want = Level::Zero;
-                            for _ in 0..h {
-                                want = want.succ();
-                            }
-                            self.unify_into(*v, want);
-                        } else {
-                            next.push((sub, sup));
+                (Level::Succ(_), Level::Var(v)) => {
+                    if let Some(h) = Self::level_height(&a) {
+                        let mut want = Level::Zero;
+                        for _ in 0..h {
+                            want = want.succ();
                         }
+                        self.unify_into(*v, want);
                     }
-                    (Level::Zero, Level::Zero) => {}
-                    (Level::Succ(s1), Level::Succ(s2)) => next.push((*s1.clone(), *s2.clone())),
-                    (Level::Zero, Level::Succ(_)) => return Err(LevelError::Inconsistent),
-                    _ => next.push((sub, sup)),
                 }
             }
-            if next.len() == self.leq.len() && next == self.leq {
-                break;
-            }
-            pending = next;
         }
-        self.leq = pending;
         Ok(())
     }
 

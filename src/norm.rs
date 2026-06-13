@@ -339,17 +339,17 @@ fn def_eq_values<'scope>(
     a: &Value<'scope>,
     b: &Value<'scope>,
 ) -> bool {
-    if let Value::VConst(name, _) = a {
-        if let Some(Entry::Def { body, .. }) = sig.get(name) {
-            let unfolded = eval(arena, sig, *body, env);
-            return def_eq_values(arena, sig, env, levels, &unfolded, b);
-        }
+    if let Value::VConst(name, _) = a
+        && let Some(Entry::Def { body, .. }) = sig.get(name)
+    {
+        let unfolded = eval(arena, sig, *body, env);
+        return def_eq_values(arena, sig, env, levels, &unfolded, b);
     }
-    if let Value::VConst(name, _) = b {
-        if let Some(Entry::Def { body, .. }) = sig.get(name) {
-            let unfolded = eval(arena, sig, *body, env);
-            return def_eq_values(arena, sig, env, levels, a, &unfolded);
-        }
+    if let Value::VConst(name, _) = b
+        && let Some(Entry::Def { body, .. }) = sig.get(name)
+    {
+        let unfolded = eval(arena, sig, *body, env);
+        return def_eq_values(arena, sig, env, levels, a, &unfolded);
     }
 
     match (a, b) {
@@ -366,15 +366,9 @@ fn def_eq_values<'scope>(
             def_eq_values(arena, sig, env, levels, x1, x2)
                 && def_eq_values(arena, sig, env, levels, y1, y2)
         }
-        (Value::VPi(id1, env1), Value::VPi(id2, env2)) => {
-            def_eq_pi(arena, sig, env, levels, *id1, env1, *id2, env2)
-        }
-        (Value::VSigma(id1, env1), Value::VSigma(id2, env2)) => {
-            def_eq_sigma(arena, sig, env, levels, *id1, env1, *id2, env2)
-        }
-        (Value::VLam(body1, env1), Value::VLam(body2, env2)) => {
-            def_eq_lam(arena, sig, env, levels, *body1, env1, *body2, env2)
-        }
+        (Value::VPi(..), Value::VPi(..)) => def_eq_pi(arena, sig, env, levels, a, b),
+        (Value::VSigma(..), Value::VSigma(..)) => def_eq_sigma(arena, sig, env, levels, a, b),
+        (Value::VLam(..), Value::VLam(..)) => def_eq_lam(arena, sig, env, levels, a, b),
         (Value::VConst(n1, _), Value::VConst(n2, _)) => n1 == n2,
         (Value::VConst(_, ty1), other) => def_eq_values(arena, sig, env, levels, ty1, other),
         (other, Value::VConst(_, ty2)) => def_eq_values(arena, sig, env, levels, other, ty2),
@@ -394,16 +388,17 @@ fn def_eq_pi<'scope>(
     sig: &Signature<'scope>,
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
-    id1: TermId<'scope>,
-    env1: &Env<'scope>,
-    id2: TermId<'scope>,
-    env2: &Env<'scope>,
+    a: &Value<'scope>,
+    b: &Value<'scope>,
 ) -> bool {
-    let (a1, b1) = match arena.get(id1) {
+    let (Value::VPi(id1, env1), Value::VPi(id2, env2)) = (a, b) else {
+        return false;
+    };
+    let (a1, b1) = match arena.get(*id1) {
         TermData::Pi(a, b) => (a, b),
         _ => return false,
     };
-    let (a2, b2) = match arena.get(id2) {
+    let (a2, b2) = match arena.get(*id2) {
         TermData::Pi(a, b) => (a, b),
         _ => return false,
     };
@@ -424,16 +419,17 @@ fn def_eq_sigma<'scope>(
     sig: &Signature<'scope>,
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
-    id1: TermId<'scope>,
-    env1: &Env<'scope>,
-    id2: TermId<'scope>,
-    env2: &Env<'scope>,
+    a: &Value<'scope>,
+    b: &Value<'scope>,
 ) -> bool {
-    let (a1, b1) = match arena.get(id1) {
+    let (Value::VSigma(id1, env1), Value::VSigma(id2, env2)) = (a, b) else {
+        return false;
+    };
+    let (a1, b1) = match arena.get(*id1) {
         TermData::Sigma(a, b) => (a, b),
         _ => return false,
     };
-    let (a2, b2) = match arena.get(id2) {
+    let (a2, b2) = match arena.get(*id2) {
         TermData::Sigma(a, b) => (a, b),
         _ => return false,
     };
@@ -454,14 +450,15 @@ fn def_eq_lam<'scope>(
     sig: &Signature<'scope>,
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
-    body1: TermId<'scope>,
-    env1: &Env<'scope>,
-    body2: TermId<'scope>,
-    env2: &Env<'scope>,
+    a: &Value<'scope>,
+    b: &Value<'scope>,
 ) -> bool {
+    let (Value::VLam(body1, env1), Value::VLam(body2, env2)) = (a, b) else {
+        return false;
+    };
     let arg = Value::VNeutral(Neutral::NVar(env.len()));
-    let v1 = eval(arena, sig, body1, &env1.extend(arg.clone()));
-    let v2 = eval(arena, sig, body2, &env2.extend(arg));
+    let v1 = eval(arena, sig, *body1, &env1.extend(arg.clone()));
+    let v2 = eval(arena, sig, *body2, &env2.extend(arg));
     def_eq_values(arena, sig, env, levels, &v1, &v2)
 }
 

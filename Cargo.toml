@@ -2,6 +2,8 @@
 name = "spartan-rs"
 version = "0.1.0"
 edition = "2024"
+description = "A small dependent type checker with universe levels, checked against a real-analysis axiom set."
+license = "MIT"
 
 [dependencies]
 thiserror = "2"

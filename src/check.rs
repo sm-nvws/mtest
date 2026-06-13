@@ -121,21 +121,8 @@ fn check_inner<'scope>(
             }
             check_inner(arena, sig, ctx, env, levels, n, Value::VNat)
         }
-        TermData::NatElim {
-            motive,
-            base,
-            step,
-            target,
-        } => check_nat_elim(
-            arena, sig, ctx, env, levels, term, ty, motive, base, step, target,
-        ),
-        TermData::SigmaElim {
-            motive,
-            elim,
-            target,
-        } => check_sigma_elim(
-            arena, sig, ctx, env, levels, term, ty, motive, elim, target,
-        ),
+        TermData::NatElim { .. } => check_nat_elim(arena, sig, ctx, env, levels, term, ty),
+        TermData::SigmaElim { .. } => check_sigma_elim(arena, sig, ctx, env, levels, term, ty),
         _ => {
             let inferred = infer_inner(arena, sig, ctx, env, levels, term)?;
             if !def_eq(arena, sig, env, levels, &inferred, &ty) {
@@ -215,9 +202,9 @@ fn infer_inner<'scope>(
             let pi_id = arena.pi(param_ty, cod_term);
             Ok(Value::VPi(pi_id, env.clone()))
         }
-        TermData::App(f, x) => {
+        TermData::App(f, _) => {
             let fun_ty = infer_inner(arena, sig, ctx, env, levels, f)?;
-            app_infer(arena, sig, ctx, env, levels, term, f, x, fun_ty)
+            app_infer(arena, sig, ctx, env, levels, term, fun_ty)
         }
         TermData::Sigma(a, b) => {
             let a_ty = infer_inner(arena, sig, ctx, env, levels, a)?;
@@ -303,10 +290,11 @@ fn app_infer<'scope>(
     env: &Env<'scope>,
     levels: &mut ConstraintSet,
     term: TermId<'scope>,
-    _f: TermId<'scope>,
-    x: TermId<'scope>,
     fun_ty: Value<'scope>,
 ) -> Result<Value<'scope>, TyError> {
+    let TermData::App(_, x) = arena.get(term) else {
+        return Err(TyError::cannot_infer(arena, term));
+    };
     let (pi_id, pi_env) = match fun_ty {
         Value::VPi(pi_id, pi_env) => (pi_id, pi_env),
         Value::VConst(_, ref ty) => match ty.as_ref() {
@@ -383,10 +371,15 @@ fn check_sigma_elim<'scope>(
     levels: &mut ConstraintSet,
     term: TermId<'scope>,
     ty: Value<'scope>,
-    motive: TermId<'scope>,
-    elim: TermId<'scope>,
-    target: TermId<'scope>,
 ) -> Result<(), TyError> {
+    let TermData::SigmaElim {
+        motive,
+        elim,
+        target,
+    } = arena.get(term)
+    else {
+        return Err(TyError::invalid_elim(arena, term));
+    };
     let target_ty = infer_inner(arena, sig, ctx, env, levels, target)?;
     let (sig_id, _env_sig) = match target_ty {
         Value::VSigma(sig_id, env_sig) => (sig_id, env_sig),
@@ -446,11 +439,16 @@ fn check_nat_elim<'scope>(
     levels: &mut ConstraintSet,
     term: TermId<'scope>,
     ty: Value<'scope>,
-    motive: TermId<'scope>,
-    base: TermId<'scope>,
-    step: TermId<'scope>,
-    target: TermId<'scope>,
 ) -> Result<(), TyError> {
+    let TermData::NatElim {
+        motive,
+        base,
+        step,
+        target,
+    } = arena.get(term)
+    else {
+        return Err(TyError::invalid_elim(arena, term));
+    };
     let motive_pi = arena.pi(arena.nat(), arena.typ(levels.fresh()));
     check_inner(
         arena,

@@ -2,6 +2,10 @@ use crate::env::Env;
 use crate::level::LevelVar;
 use crate::term::{Name, TermId};
 
+// Variants are prefixed with `V`/`N` on purpose: it keeps semantic values
+// visually distinct from the syntactic `TermData` variants that share names
+// (Pi, Lam, Sigma, ...).
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug)]
 pub enum Value<'scope> {
     VPi(TermId<'scope>, Env<'scope>),
@@ -16,6 +20,7 @@ pub enum Value<'scope> {
     VNeutral(Neutral<'scope>),
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug)]
 pub enum Neutral<'scope> {
     NVar(usize),

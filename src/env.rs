@@ -11,7 +11,11 @@ impl<'scope> Env<'scope> {
     }
 
     pub fn lookup(&self, index: usize) -> &Value<'scope> {
-        &self.bindings[self.bindings.len() - 1 - index]
+        let len = self.bindings.len();
+        match len.checked_sub(1).and_then(|top| top.checked_sub(index)) {
+            Some(pos) => &self.bindings[pos],
+            None => panic!("de Bruijn index {index} out of range (env len {len})"),
+        }
     }
 
     pub fn extend(&self, value: Value<'scope>) -> Self {
@@ -22,5 +26,9 @@ impl<'scope> Env<'scope> {
 
     pub fn len(&self) -> usize {
         self.bindings.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bindings.is_empty()
     }
 }
